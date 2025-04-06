@@ -13,6 +13,8 @@
 
 package org.littletonrobotics.junction;
 
+import edu.wpi.first.units.Measure;
+import edu.wpi.first.units.Unit;
 import edu.wpi.first.util.struct.Struct;
 import edu.wpi.first.util.struct.StructSerializable;
 import edu.wpi.first.wpilibj.DriverStation;
@@ -188,7 +190,68 @@ class RecordStruct implements Struct {
               }
             });
         unpackFunctions.add((ByteBuffer bb) -> enumValues[bb.getInt()]);
+      } else if (component.getType().isInstance(Measure.class)) {
+        size += 8; // Measure store values as doubles
 
+        Unit tempUnit = null;
+
+        try {
+          // Get what unit the measurement is in from reflected method
+          Method unitMethod = component.getType().getMethod("unit");
+          unitMethod.setAccessible(true);
+          tempUnit = (Unit) unitMethod.invoke(null);
+        } catch (Exception e) {
+          DriverStation.reportError(
+              "[AdvantageKit] Failed to get unit from measurement \""
+                  + component.getName()
+                  + "\" for record type \""
+                  + recordClass.getSimpleName()
+                  + "\"",
+              true);
+        }
+
+        // Resolves error "Local variable unit is required to be final or effectively
+        // final based on its use"
+        Unit unit = tempUnit;
+
+        schema.append("measure<");
+        schema.append(unit != null ? unit.getClass().getSimpleName() : "Unknown");
+        schema.append("> ");
+        schema.append(component.getName());
+        schema.append(";");
+
+        // Add pack function to store magnitude
+        packFunctions.add(
+            (ByteBuffer bb, Object record) -> {
+              try {
+                Measure measure = (Measure) accessor.invoke(record);
+                bb.putDouble(measure != null ? measure.magnitude() : 0.0);
+              } catch (IllegalAccessException
+                  | IllegalArgumentException
+                  | InvocationTargetException e) {
+                e.printStackTrace();
+              }
+            });
+
+        // Add unpack function to restore measure with proper unit
+        unpackFunctions.add((ByteBuffer bb) -> {
+          if (unit != null) {
+            // Create measure with the correct unit
+            double magnitude = bb.getDouble();
+            try {
+              // Use unit.of(magnitude) to create the measure
+              Method ofMethod = unit.getClass().getMethod("of", double.class);
+              return ofMethod.invoke(null, magnitude);
+            } catch (Exception e) {
+              e.printStackTrace();
+              return null;
+            }
+          } else {
+            // Skip the bytes if we couldn't determine the unit
+            bb.position(bb.position() + 8);
+            return null;
+          }
+        });
       } else if (component.getType().isRecord()
           || StructSerializable.class.isAssignableFrom(component.getType())) {
         Struct<?> struct = null;
