@@ -214,9 +214,7 @@ class RecordStruct implements Struct {
         // final based on its use"
         Unit unit = tempUnit;
 
-        schema.append("measure<");
-        schema.append(unit != null ? unit.getClass().getSimpleName() : "Unknown");
-        schema.append("> ");
+        schema.append("double ");
         schema.append(component.getName());
         schema.append(";");
 
